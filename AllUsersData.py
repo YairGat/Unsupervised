@@ -1,7 +1,5 @@
 import numpy as np
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics.cluster import adjusted_mutual_info_score
+
 
 from Data import Data
 
@@ -26,8 +24,7 @@ class AllUsersData(Data):
             median = np.median(index_of_info)
             for j in index_of_missing_info:
                 self.csv[j][i] = median
-        self.classification = self.csv[:, [0, 1]]
-        self.csv = np.delete(self.csv, 0, 1)
+        self.classification = self.csv[:, 0]
         self.csv = np.delete(self.csv, 0, 1)
 
 

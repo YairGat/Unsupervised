@@ -14,36 +14,36 @@ import skfuzzy as fuzz
 from sklearn.metrics import silhouette_score
 from sklearn.metrics.cluster import adjusted_mutual_info_score
 from scipy import stats
+# outlier/anomaly detection
+from sklearn.neighbors import LocalOutlierFactor
 
 
 # Data class represents a base class for each data.
 class Data:
-    NUMBER_OF_SAMPLES = 11000
+    NUMBER_OF_SAMPLES = 8000
 
     # _init_ Data with .
-    def __init__(self, csv_name, delimiter):
+    def __init__(self, csv_path, delimiter):
         # csv name.
-        self.csv_name = csv_name
+        self.csv_path = csv_path
         # Sign that separator between column.
         self.delimiter = delimiter
         # hold the csv content.
-        self.csv = np.genfromtxt(csv_name, delimiter=delimiter,
+        self.csv = np.genfromtxt(csv_path, delimiter=delimiter,
                                  encoding='utf8', dtype=np.str)
         # change no numbers places in the csv to be numbers.
         self._load_csv()
         # hold the data after dimension reduction.
         self.principalDfOriginal = self.dimension_reduction()
-
         self.principalDf = self.get_sample_from_data(0)
         # hold the classification column with same index of the sample
         self.classification = self._get_classification()[self.principalDf.index]
-        # reduce the dimension of the data to be 2d.
+        csv_name = csv_path.split('/')[1].split('.')[0]
+        self.file_path = open('Results\\' + csv_name, 'a')
+        self.file_path.write(csv_name + '\n')
 
     def _get_classification(self):
         return self.classification
-
-    def _update_classfication(self):
-        pass
 
     def dimension_reduction(self):
         pca = PCA(n_components=2)
@@ -68,21 +68,20 @@ class Data:
     def get_sample_from_data(self, random_state):
         return self.principalDfOriginal.sample(n=self.NUMBER_OF_SAMPLES, random_state=random_state)
 
-    def silhouette(self, clustering_algorithm, title='', plot=True, i=0):
-        if i == 0:
-            data_for_silhouette = self.principalDf
+    def silhouette(self, clustering_algorithm, title='', plot=True, i=0, anomaly=False):
+        if anomaly:
+            data = self.get_data_without_anomaly_points()
+        elif i == 0:
+            data = self.principalDf
         else:
-            data_for_silhouette = self.get_sample_from_data(i)
+            data = self.get_sample_from_data(i)
         # This list will hold the silhouette scores.
         silhouette_list = []
         # Range of silhouette.
-        if self.csv_name == 'diabetic_data.csv':
-            r = range(5, 25)
-        else:
-            r = range(2, 15)
+        r = range(2, 8)
         for k in r:
-            labels = self.cluster_labels(clustering_algorithm, k, i)
-            silhouette_list.append(silhouette_score(data_for_silhouette, labels))
+            labels = self.cluster_labels(clustering_algorithm, k, i, anomaly=anomaly)
+            silhouette_list.append(silhouette_score(data, labels))
         if not plot:
             return silhouette_list
         else:
@@ -93,21 +92,28 @@ class Data:
             plt.show()
 
     ###### anomaly detection #######
-    def get_anomaly_points_by_dbscan(self, labels='', i=0):
-        if labels == '':
-            labels = self.dbscan(plot=False)
-        outlier = self.principalDf[labels == -1]
-        return outlier
+    def LOF(self):
+        df = self.principalDf
+        # model specification
+        model1 = LocalOutlierFactor(n_neighbors=2, metric="manhattan", contamination=0.02)
+        # model fitting
+        y_pred = model1.fit_predict(df)
+        # filter outlier index
+        outlier_index = np.where(y_pred == -1)  # negative values are outliers and positives inliers
+        # filter outlier values
+        outlier_values = df.iloc[outlier_index]
+        return [df.iloc, y_pred]
 
-    def get_anomaly_points_by_silhouette(self, labels):
-        silhouette = silhouette_samples(self.principalDf, labels, metric='euclidean')
-        outlier = labels[silhouette <= 0]
-        return outlier
+    def get_index_without_anomaly_points(self):
+        lof = self.LOF()[1]
+        return np.where(lof == 1)
 
-    def get_clustered_data_without_anomaly_points_by_silhouette(self, labels):
-        silhouette = silhouette_samples(self.principalDf, labels, metric='euclidean')
-        labels = labels[silhouette > 0]
-        return labels
+    def get_data_without_anomaly_points(self):
+        core_points = self.LOF()[0][self.get_index_without_anomaly_points()]
+        return core_points
+
+    def get_classification_without_anomaly_points(self):
+        return self._get_classification()[self.get_index_without_anomaly_points()]
 
     ###### CLUSTERING ALGHORITHM ###############
     def dbscan(self, plot=True, i=0):
@@ -122,61 +128,71 @@ class Data:
         else:
             return model.labels_
 
-    def k_means(self, k, plot=True, i=0):
-        if i == 0:
-            data_to_cluster = self.principalDf
+    def k_means(self, k, plot=True, i=0, anomaly=False):
+        if anomaly:
+            data = self.get_data_without_anomaly_points()
+        elif i == 0:
+            data = self.principalDf
         else:
-            data_to_cluster = self.get_sample_from_data(i)
+            data = self.get_sample_from_data(i)
         kmeans = KMeans(n_clusters=k)
-        kmeans.fit(data_to_cluster)
-        labels = kmeans.predict(data_to_cluster)
+        kmeans.fit(data)
+        labels = kmeans.predict(data)
         if plot:
-            self.cluster_plot(data_to_cluster, 'K-MEAN', labels)
+            self.cluster_plot(data, 'K-MEAN', labels)
         return labels
 
-    def gmm(self, k, plot=True, i=0):
-        if i == 0:
-            data_to_cluster = self.principalDf
+    def gmm(self, k, plot=True, i=0, anomaly=False):
+        if anomaly:
+            data = self.get_data_without_anomaly_points()
+        elif i == 0:
+            data = self.principalDf
         else:
-            data_to_cluster = self.get_sample_from_data(i)
-        gmm = GaussianMixture(n_components=k).fit(data_to_cluster)
-        labels = gmm.predict(self.principalDf)
+            data = self.get_sample_from_data(i)
+        gmm = GaussianMixture(n_components=k).fit(data)
+        labels = gmm.predict(data)
         if plot:
-            self.cluster_plot(data_to_cluster, 'GMM', labels)
+            self.cluster_plot(data, 'GMM', labels)
         return labels
 
-    def hierarchical(self, k, plot=True, i=0):
-        if i == 0:
-            data_to_cluster = self.principalDf
+    def hierarchical(self, k, plot=True, i=0, anomaly=False):
+        if anomaly:
+            data = self.get_data_without_anomaly_points()
+        elif i == 0:
+            data = self.principalDf
         else:
-            data_to_cluster = self.get_sample_from_data(i)
+            data = self.get_sample_from_data(i)
         hierarchical = AgglomerativeClustering(n_clusters=k)
-        hierarchical.fit(data_to_cluster)
+        hierarchical.fit(data)
         labels = hierarchical.labels_
         if plot:
-            self.cluster_plot(data_to_cluster, 'Hierarchical', labels)
+            self.cluster_plot(data, 'Hierarchical', labels)
         return labels
 
-    def spectral(self, k, plot=True, i=0):
-        if i == 0:
-            data_to_cluster = self.principalDf
+    def spectral(self, k, plot=True, i=0, anomaly=False):
+        if anomaly:
+            data = self.get_data_without_anomaly_points()
+        elif i == 0:
+            data = self.principalDf
         else:
-            data_to_cluster = self.get_sample_from_data(i)
+            data = self.get_sample_from_data(i)
         clustering = SpectralClustering(n_clusters=k, assign_labels="discretize", random_state=0)
-        labels = clustering.fit_predict(data_to_cluster)
+        labels = clustering.fit_predict(data)
         if plot:
-            self.cluster_plot(data_to_cluster, 'Spectral', labels)
+            self.cluster_plot(data, 'Spectral', labels)
         return labels
 
-    def fcm(self, k, plot=True, i=0):
-        if i == 0:
-            data_to_cluster = self.principalDf
+    def fcm(self, k, plot=True, i=0, anomaly=False):
+        if anomaly:
+            data = self.get_data_without_anomaly_points()
+        elif i == 0:
+            data = self.principalDf
         else:
-            data_to_cluster = self.get_sample_from_data(i)
-        cntr, u, u0, d, jm, p, fpc = fuzz.cluster.cmeans(data_to_cluster.T, k, 2, error=0.005, maxiter=1000)
+            data = self.get_sample_from_data(i)
+        cntr, u, u0, d, jm, p, fpc = fuzz.cluster.cmeans(data.T, k, 2, error=0.005, maxiter=1000)
         labels = np.argmax(u, axis=0)
         if plot:
-            self.cluster_plot(data_to_cluster, 'FCM', labels)
+            self.cluster_plot(data, 'FCM', labels)
         return labels
 
     ###### END OF CLUSTERING ###########
@@ -192,55 +208,69 @@ class Data:
         plt.show()
 
     # Get clustering method and return clustered data.
-    def cluster_labels(self, cluster_type, k, i=0):
-        return cluster_type(k, False, i)
+    def cluster_labels(self, cluster_type, k, i=0, anomaly=False):
+        return cluster_type(k, plot = False, i=i, anomaly=anomaly)
 
-    def silhouette_all(self):
-        self.silhouette(self.fcm, "FCM")
-        self.silhouette(self.k_means, "K-MEANS")
-        self.silhouette(self.spectral, "SPECTRAL")
-        self.silhouette(self.hierarchical, "HIERARCHICAL")
-        self.silhouette(self.gmm, "GMM")
-
-    def get_silhouette_list(self, clustering_method):
+    def get_silhouette_list(self, clustering_method, anomaly=False):
         silhouette = []
         r = np.random.choice(range(1, 100), 5, replace=False)
         for i in range(0, 4):
-            silhouette.append(self.silhouette(clustering_method, plot=False, i=r[i]))
+            silhouette.append(self.silhouette(clustering_method, plot=False, i=r[i], anomaly=anomaly))
         return np.transpose(silhouette)
 
     def t_test_(self, silhouette_list):
         best_cluster = silhouette_list[0]
         # In the second data the first sillhoute value is 9 while in the other is 2.
-        if self.csv_name == 'diabetic_data.csv':
-            start = 5
-            best_number_of_clusters = 5
-
-        else:
-            start = 2
-            best_number_of_clusters = 2
+        start = 2
+        best_number_of_clusters = 2
         sig = 0.05
+        t = 2
+        for i in range(len(silhouette_list)):
+            self.file_path.write("The average silhouette score of " + str(t) + " clusters is: " + str(
+                np.mean(silhouette_list[i])) + '\n')
+            t = t + 1
         for i in range(0, len(silhouette_list)):
             t, p = stats.ttest_ind(best_cluster, silhouette_list[i], equal_var=False)
             if np.mean(best_cluster) > np.mean(silhouette_list[i]):
                 p = p / 2
             else:
                 p = 1 - p / 2
+            clusters = i + start
+            self.file_path.write(
+                'H0: ' + str(best_number_of_clusters) + ' is more accurate then ' + str(clusters) + 'is: ' + str(
+                    p) + '.\n')
             if float(p) > sig:
                 best_cluster = silhouette_list[i]
                 best_number_of_clusters = i + start
         return best_number_of_clusters
 
-    def get_optimal_number_of_clustering(self, method):
-        return self.t_test_(self.get_silhouette_list(method))
+    def get_optimal_number_of_clusters(self, method, anomaly=False):
+        if method == self.k_means:
+            self.file_path.write('K-Means:\n')
+        elif method == self.gmm:
+            self.file_path.write('GMM:\n')
+        elif method == self.fcm:
+            self.file_path.write('FCM:\n')
+        elif method == self.hierarchical:
+            self.file_path.write('Hierarchical:\n')
+        elif method == self.spectral:
+            self.file_path.write('Spectral:\n')
+        else:
+            self.file_path.write('Other\n')
+        return self.t_test_(self.get_silhouette_list(method, anomaly=anomaly))
 
     ######## Mutual Information ###########
-    def ami(self, method, optimal_number_of_clustering=0):
+    def ami(self, method, optimal_number_of_clustering=0, anomaly=False):
+        if anomaly:
+            classification = self.get_classification_without_anomaly_points()
+        else:
+            classification = self._get_classification()
         if optimal_number_of_clustering == 0:
-            optimal_number_of_clustering = self.get_optimal_number_of_clustering(method)
+            optimal_number_of_clustering = self.get_optimal_number_of_clusters(method)
         else:
             optimal_number_of_clustering = optimal_number_of_clustering
-        return adjusted_mutual_info_score(method(optimal_number_of_clustering, plot=False), self.classification)
+        return adjusted_mutual_info_score(method(optimal_number_of_clustering, plot=False, anomaly=anomaly),
+                                          classification)
 
     def plot_optimal_clusters(self):
         pass
@@ -251,7 +281,7 @@ class Data:
         silhouette_fcm = self.silhouette(self.fcm, "fcm", plot=False)
         silhouette_spectral = self.silhouette(self.spectral, "bla", plot=False)
         silhouette_hierarcial = self.silhouette(self.hierarchical, "bla", plot=False)
-        if self.csv_name == 'diabetic_data.csv':
+        if self.csv_path == 'diabetic_data.csv':
             r = range(5, 25)
         else:
             r = range(2, 15)
