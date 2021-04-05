@@ -26,39 +26,39 @@ class Data:
     def __init__(self, csv_path, delimiter):
         # csv name.
         self.csv_path = csv_path
-        # Sign that separator between column.
+        # Signs that separator between column.
         self.delimiter = delimiter
-        # hold the csv content.
+        # holds the csv content.
         self.csv = np.genfromtxt(csv_path, delimiter=delimiter,
                                  encoding='utf8', dtype=np.str)
-        # change no numbers places in the csv to be numbers.
+        # changing the no numbers places in the csv to be numbers.
         self._load_csv()
-        # hold the data after dimension reduction.
+        # holds the data after dimension reduction.
         self.principalDfOriginal = self.dimension_reduction()
         self.principalDf = self.get_sample_from_data(0)
-        # hold the classification column with same index of the sample
+        # holds the classification column with same index of the sample
         self.classification = self._get_classification()[self.principalDf.index]
         csv_name = csv_path.split('/')[1].split('.')[0]
         self.file_path = open('Results\\' + csv_name, 'a')
         self.file_path.write(csv_name + '\n')
-
+    # return the classifcation column
     def _get_classification(self):
         return self.classification
-
+    # This function reduces the data's dimension. 
     def dimension_reduction(self):
         pca = PCA(n_components=2)
         principal_components = pca.fit_transform(StandardScaler().fit_transform(self.get_content()))
         principal_df = pd.DataFrame(data=principal_components,
                                     columns=['principal component 1', 'principal component 2'])
         return principal_df
-
+    
     def get_principal_df(self):
         return self.principalDf
 
     # Every data update the csv differently.
     def _load_csv(self):
         pass
-
+    
     def get_titles(self):
         return self.csv[0]
 
